@@ -65,10 +65,10 @@
   L.control.scale({ imperial: false, metric: true }).addTo(map);
 
   const basemaps = {
-    light: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      subdomains: 'abcd', maxZoom: 20, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>' }),
-    dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      subdomains: 'abcd', maxZoom: 20, attribution: '&copy; OpenStreetMap &copy; CARTO' }),
+    light: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 16, attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ' }),
+    dark: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 16, attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ' }),
     osm: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }),
     topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
@@ -432,11 +432,14 @@
   });
 
   /* ---------------- status bar ---------------- */
+  let quizHidesReadout = false;
   map.on('mousemove', e => {
     const pt = { lat: e.latlng.lat, lon: e.latlng.lng };
     const d = distNM(MARCH, pt), b = bearingTrue(MARCH, pt);
     $('stCursor').textContent = `Cursor ${fmtLat(pt.lat)} ${fmtLon(pt.lon)}`;
-    $('stFromMarch').textContent = `From YMR R${pad3(b)} · ${d < 10 ? d.toFixed(1) : d.toFixed(0)} NM · ${SECTOR_NAMES[sectorOf(b)]}`;
+    $('stFromMarch').textContent = quizHidesReadout
+      ? 'From YMR — hidden while a question is open'
+      : `From YMR R${pad3(b)} · ${d < 10 ? d.toFixed(1) : d.toFixed(0)} NM · ${SECTOR_NAMES[sectorOf(b)]}`;
   });
   const updZoom = () => { $('stZoom').textContent = `Zoom ${map.getZoom()}`; };
   map.on('zoomend', updZoom); updZoom();
@@ -469,7 +472,7 @@
     ['Tower', MARCH.freqs.tower], ['Ground', MARCH.freqs.ground],
     ['Midtown Centre', MARCH.freqs.midtownCentre], ['Surveillance from', `${MARCH.surveillanceFloorFt}' ASL`],
     ['Rwy 09/27', '090° / 270° · 8800 × 200'], ['Rwy 14/32', '143° / 323° · 6900 × 200'],
-    ['Class E', '700\' AGL to 3500\' ASL outside CZ'], ['Winnipeg', 'R210 · 93 NM']
+    ['Class E', '700\' AGL to 3500\' ASL outside CZ'], ['Circuit', 'Right-hand Rwy 27 & 32']
   ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
 
   $('sectorSheet').innerHTML = SECTORS.map(s => {
@@ -485,17 +488,20 @@
     let score = { correct: 0, total: 0, streak: 0 };
     try { score = Object.assign(score, JSON.parse(localStorage.getItem(QKEY) || '{}')); } catch { /* ignore */ }
     let current = null, answered = false, guessMarker = null, guessLine = null, actualHalo = null, hiddenTarget = null;
-    function hideTarget(loc) {           // locate mode: hide the answer and all idents
+    function hideTarget(loc) {           // any location question: hide the answer and all idents
+      map.closePopup(); clearSelection();
       const mk = markers[loc.id];
       if (mk._homeLayer.hasLayer(mk)) mk._homeLayer.removeLayer(mk);
       hiddenTarget = loc;
       map.getContainer().classList.add('hide-labels');
+      quizHidesReadout = true;
     }
     function restoreTarget() {
       if (!hiddenTarget) return;
       const mk = markers[hiddenTarget.id];
       if (!mk._homeLayer.hasLayer(mk)) mk._homeLayer.addLayer(mk);   // group only shows it if that group is on the map
       hiddenTarget = null;
+      quizHidesReadout = false;
       if ($('tgLabels').checked) map.getContainer().classList.remove('hide-labels');
     }
     const body = $('quizBody');
@@ -519,7 +525,7 @@
       body.insertAdjacentHTML('beforeend', `<div class="feedback ${ok ? 'ok' : 'bad'}">${html}</div><div class="streak">Streak: ${score.streak}</div>`);
       $('btnQuizNext').disabled = false; answered = true;
     }
-    function reveal(loc) { selectLocation(loc.id, { fly: true, line: true }); }
+    function reveal(loc) { restoreTarget(); selectLocation(loc.id, { fly: true, line: true }); }
 
     function next(forceId) {
       cleanupMap(); answered = false; $('btnQuizNext').disabled = true;
@@ -530,6 +536,7 @@
       let loc = forceId ? byId[forceId] : null;
       if (!loc) { do { loc = p[Math.floor(Math.random() * p.length)]; } while (p.length > 1 && current && loc.id === current.id); }
       current = loc;
+      hideTarget(loc);
       ({ identify: askIdentify, radial: askRadial, locate: askLocate, sector: askSector })[m](loc);
     }
 
@@ -570,8 +577,6 @@
     function askLocate(loc) {
       body.innerHTML = `<div class="quiz-prompt">Click on the map where you think this is.</div><div class="quiz-big">${loc.id}</div><div class="quiz-sub">${esc(loc.name)}</div>
         <div class="muted small">Tip: it's on the ${pad3(loc.radial)} radial. Use the compass rose and range rings.</div>`;
-      clearSelection();
-      hideTarget(loc);
       map.fitBounds(boundsNM(Math.max(30, loc.dist * 1.3)));
       setMode('locate', `Click where ${loc.id} is · Esc to cancel`);
     }
@@ -628,7 +633,12 @@
     saveScore();
     body.innerHTML = '<div class="quiz-prompt">Pick a mode and pool, then press <b>Start</b>. Enter checks an answer; Next moves on.</div>';
     return {
-      startWith: id => { $('quizMode').value = 'radial'; next(id); },
+      startWith: id => {
+        map.closePopup();
+        if (!['radial', 'sector', 'locate'].includes($('quizMode').value)) $('quizMode').value = 'radial';
+        next(id);
+        const loc = byId[id]; if ($('quizMode').value !== 'locate') map.fitBounds(boundsNM(Math.max(30, loc.dist * 1.3)));
+      },
       locateGuess,
       cancelLocate: () => { restoreTarget(); body.insertAdjacentHTML('beforeend', '<div class="quiz-prompt">Cancelled – press Next for another.</div>'); $('btnQuizNext').disabled = false; answered = true; }
     };
