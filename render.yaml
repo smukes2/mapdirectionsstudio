@@ -1,0 +1,17 @@
+# Render Blueprint – deploys this folder as a static site.
+# New → Blueprint in the Render dashboard, or create a Static Site manually
+# with build command blank and publish directory "." 
+services:
+  - type: web
+    name: cymr-area-map
+    runtime: static
+    buildCommand: ""
+    staticPublishPath: .
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: SAMEORIGIN
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html

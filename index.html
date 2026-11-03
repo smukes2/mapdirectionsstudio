@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>March Tower Area Map – CYMR</title>
+  <meta name="description" content="Interactive training map of Canada centred on March (CYMR): airports by radial and distance, range rings, pins with notes, and direction quizzes. Based on the Basic Airport Control Course, Lesson 102.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%230b2a4a'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%23fff' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" onerror="this.onerror=null;this.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css'">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark" aria-hidden="true">YMR</div>
+    <div class="brand-text">
+      <h1>March Tower Area Map</h1>
+      <p>CYMR · Basic Airport Control · Lesson 102 reference</p>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span class="freq"><b>TWR</b> 118.2</span>
+    <span class="freq"><b>GND</b> 121.9</span>
+    <span class="freq"><b>MIDTOWN</b> 127.4</span>
+    <button id="btnSidebar" class="icon-btn" title="Show / hide panel" aria-label="Toggle panel">&#9776;</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <nav class="tabs" role="tablist">
+      <button data-tab="locations" class="active" role="tab">Locations</button>
+      <button data-tab="pins" role="tab">My Pins</button>
+      <button data-tab="learn" role="tab">Learn</button>
+      <button data-tab="tools" role="tab">Tools</button>
+    </nav>
+
+    <!-- LOCATIONS -->
+    <section class="panel active" id="tab-locations">
+      <div class="search-row">
+        <input id="locSearch" type="search" placeholder="Search ident or name (e.g. CYWG, Kenora)" autocomplete="off">
+      </div>
+      <div class="chip-row" id="locFilters">
+        <button data-filter="all" class="chip active">All</button>
+        <button data-filter="local" class="chip">≤ 30 NM</button>
+        <button data-filter="regional" class="chip">≤ 200 NM</button>
+        <button data-filter="distant" class="chip">&gt; 200 NM</button>
+        <button data-filter="fictional" class="chip">Training sites</button>
+      </div>
+      <div class="list-meta"><span id="locCount"></span><span class="muted">Sorted by distance from YMR</span></div>
+      <ul class="loc-list" id="locList"></ul>
+    </section>
+
+    <!-- PINS -->
+    <section class="panel" id="tab-pins">
+      <div class="panel-intro">
+        <p>Drop your own pins for landmarks, reporting points, circuit references – anything you want to remember. Pins are saved in this browser.</p>
+        <div class="btn-row">
+          <button id="btnPinMode" class="btn primary">+ Drop a pin</button>
+          <button id="btnPinAtMarch" class="btn">Pin at March</button>
+        </div>
+      </div>
+      <div class="list-meta"><span id="pinCount"></span><button id="btnClearPins" class="link-btn danger">Delete all</button></div>
+      <ul class="pin-list" id="pinList"></ul>
+      <div class="empty" id="pinEmpty">No pins yet. Click <b>Drop a pin</b>, then click anywhere on the map.</div>
+    </section>
+
+    <!-- LEARN -->
+    <section class="panel" id="tab-learn">
+      <div class="card">
+        <div class="card-head">
+          <h2>Direction trainer</h2>
+          <span class="score" id="quizScore">0 / 0</span>
+        </div>
+        <div class="field-row">
+          <label>Mode
+            <select id="quizMode">
+              <option value="identify">Decode ident → name</option>
+              <option value="radial">Radial &amp; distance</option>
+              <option value="locate">Find it on the map</option>
+              <option value="sector">Which direction?</option>
+              <option value="airline">Airline call signs</option>
+            </select>
+          </label>
+          <label>Pool
+            <select id="quizPool">
+              <option value="100">Within 100 NM</option>
+              <option value="400">Within 400 NM</option>
+              <option value="all" selected>All locations</option>
+              <option value="fictional">Training sites only</option>
+            </select>
+          </label>
+        </div>
+        <div id="quizBody" class="quiz-body"></div>
+        <div class="btn-row">
+          <button id="btnQuizStart" class="btn primary">Start</button>
+          <button id="btnQuizNext" class="btn" disabled>Next ▸</button>
+          <button id="btnQuizReset" class="link-btn">Reset score</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>March at a glance</h2></div>
+        <dl class="facts" id="marchFacts"></dl>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Who is in which direction?</h2></div>
+        <p class="muted small">Airports grouped by compass sector from YMR, nearest first. Click one to show it.</p>
+        <div id="sectorSheet" class="sector-sheet"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Reading a radial</h2></div>
+        <ul class="tips">
+          <li>A <b>radial</b> is the bearing <b>from</b> the station. Winnipeg is on the <b>210 radial</b> – it lies south-west of March.</li>
+          <li>To fly <b>to</b> March from a location on radial 210, track the reciprocal: 210 − 180 = <b>030</b>.</li>
+          <li>March variation is <b>5° E</b>. Magnetic = True − 5°. (The course table is used as-is here.)</li>
+          <li>Know every landmark within <b>25 NM</b> – MATS expects you to help pilots find reporting points.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- TOOLS -->
+    <section class="panel" id="tab-tools">
+      <div class="card">
+        <div class="card-head"><h2>Measure</h2></div>
+        <p class="muted small">Click two points on the map for distance and bearing between them.</p>
+        <div class="btn-row">
+          <button id="btnMeasure" class="btn primary">Start measuring</button>
+          <button id="btnMeasureClear" class="btn">Clear</button>
+        </div>
+        <div id="measureOut" class="readout"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Map layers</h2></div>
+        <div class="toggle-grid">
+          <label><input type="checkbox" id="tgCZ" checked> Control zone (5 NM, Class D)</label>
+          <label><input type="checkbox" id="tgRings" checked> Range rings (10 / 25 / 50 / 100 NM)</label>
+          <label><input type="checkbox" id="tgRose" checked> Compass rose &amp; radials</label>
+          <label><input type="checkbox" id="tgLabels" checked> Airport labels</label>
+          <label><input type="checkbox" id="tgFict" checked> Training sites (fictional)</label>
+          <label><input type="checkbox" id="tgDistant" checked> Distant airports (&gt; 200 NM)</label>
+        </div>
+        <div class="field-row">
+          <label>Basemap
+            <select id="basemap">
+              <option value="light" selected>Light (CARTO)</option>
+              <option value="osm">OpenStreetMap</option>
+              <option value="topo">Topographic</option>
+              <option value="imagery">Satellite imagery</option>
+              <option value="dark">Dark</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Pins backup</h2></div>
+        <div class="btn-row">
+          <button id="btnExport" class="btn">Export pins (JSON)</button>
+          <label class="btn file-btn">Import pins <input type="file" id="fileImport" accept="application/json" hidden></label>
+        </div>
+        <p class="muted small">Export before clearing your browser data. Import merges into your existing pins.</p>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>About</h2></div>
+        <p class="muted small">Locations, radials and distances follow the Lesson 102 airport-identifier table. Real airports are plotted at their real coordinates; fictional training sites (CCL4, CKL7, CKE1, CEV4, CEB2, CEH1, CNW5, CJP1, CSS9, CEM6, CWS4) are placed at their published radial and distance from YMR. Not for operational use.</p>
+      </div>
+    </section>
+  </aside>
+
+  <main class="map-wrap">
+    <div id="map" role="application" aria-label="Interactive map"></div>
+
+    <div class="map-toolbar">
+      <button id="tbHome" class="tb-btn" title="Centre on March">⌂ March</button>
+      <button id="tbFitLocal" class="tb-btn" title="Fit 25 NM">25 NM</button>
+      <button id="tbFitAll" class="tb-btn" title="Fit all locations">All</button>
+      <button id="tbPin" class="tb-btn" title="Drop a pin">📍 Pin</button>
+      <button id="tbMeasure" class="tb-btn" title="Measure">📏 Measure</button>
+    </div>
+
+    <div class="mode-banner" id="modeBanner"></div>
+
+    <div class="statusbar">
+      <span id="stCursor">—</span>
+      <span id="stFromMarch">—</span>
+      <span id="stZoom">—</span>
+    </div>
+  </main>
+</div>
+
+<!-- Pin modal -->
+<div class="modal-backdrop" id="pinModal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="pinModalTitle">
+    <h3 id="pinModalTitle">New pin</h3>
+    <label>Title
+      <input id="pinTitle" list="landmarkList" placeholder="e.g. Smokestacks, Second Bridge" maxlength="60">
+      <datalist id="landmarkList"></datalist>
+    </label>
+    <label>Notes
+      <textarea id="pinNotes" rows="4" placeholder="Reporting point notes, circuit tips, what it looks like from the tower…"></textarea>
+    </label>
+    <div class="field-row">
+      <label>Colour
+        <select id="pinColor">
+          <option value="#d9480f">Orange</option>
+          <option value="#1864ab">Blue</option>
+          <option value="#2b8a3e">Green</option>
+          <option value="#862e9c">Purple</option>
+          <option value="#c92a2a">Red</option>
+          <option value="#495057">Grey</option>
+        </select>
+      </label>
+      <div class="coord-box"><span class="muted small">Position</span><div id="pinCoords">—</div></div>
+    </div>
+    <div class="btn-row right">
+      <button id="pinDelete" class="link-btn danger" hidden>Delete</button>
+      <button id="pinCancel" class="btn">Cancel</button>
+      <button id="pinSave" class="btn primary">Save pin</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""
+        onerror="var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js';s.onload=function(){window.__leafletReady&&window.__leafletReady();};document.head.appendChild(s);"></script>
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
